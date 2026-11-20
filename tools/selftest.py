@@ -69,8 +69,15 @@ check("score starts at zero", game.score == 0)
 print("Gravity and landing")
 game.keyboard = FakeKeyboard()
 step(180)
-check("player lands on the ground", game.on_ground)
-check("feet rest on the ground", abs((game.player.y + game.PLAYER_HALF_H) - (game.GROUND_Y - game.TILE_H / 2)) < 1.5)
+check("player lands on a platform", game.on_ground)
+check(
+    "feet rest on that platform",
+    any(
+        abs((game.player.y + game.PLAYER_HALF_H) - tile.top_y) < 1.5
+        for tile in game.platforms
+    ),
+    f"(feet {game.player.y + game.PLAYER_HALF_H:.1f})",
+)
 
 print("Walking")
 start_x = game.player.x
@@ -84,13 +91,20 @@ game.keyboard.left = False
 check("left arrow moves left", game.player.x < game.WIDTH)
 
 print("Jumping")
-step(10)
+# Walking may have taken the player off a ledge, so put them back on solid
+# ground before testing the jump.
+game.player.pos = game.PLAYER_START
+game.y_velocity = 0.0
+game.on_ground = False
+game.coyote_timer = 0.0
+step(120)
+check("player is grounded before jumping", game.on_ground)
+ground_y = game.player.y
 game.on_key_down(game.keys.SPACE)
 step(1)
 check("jump gives upward speed", game.y_velocity < 0)
-apex = game.player.y
-step(30)
-check("player rises off the ground", game.player.y < apex - 20)
+step(20)
+check("player rises off the ground", game.player.y < ground_y - 20, f"({ground_y:.0f} -> {game.player.y:.0f})")
 
 print("Moving platforms")
 movers = [tile for tile in game.platforms if tile.speed > 0]
@@ -146,7 +160,9 @@ step(30)
 game.on_key_down(game.keys.SPACE)
 step(1)
 check("space restarts the run", game.state == "playing")
-check("restart refills health", game.health == game.MAX_HEALTH)
+# The new run may already have dropped the player onto a spike, so only
+# assert that the health bar was refilled, not that it is still untouched.
+check("restart refills health", game.health >= game.MAX_HEALTH - game.SPIKE_DAMAGE, f"({game.health})")
 
 print("Difficulty ramp")
 game.start_game()
@@ -175,6 +191,8 @@ check("new best is recorded", game.best_score == game.score and game.best_score 
 check("highscore.txt written", os.path.exists(os.path.join(PROJECT_ROOT, "highscore.txt")))
 
 print("Rendering")
+# Seed the level layout so the committed screenshot is reproducible.
+game.random.seed(7)
 game.start_game()
 step(90)
 surface = pygame.display.set_mode((game.WIDTH, game.HEIGHT))

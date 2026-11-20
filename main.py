@@ -439,6 +439,23 @@ def move_player(dt):
                     landing = tile
                     landing_top = top
 
+    # A platform that moved under a resting player carries it sideways; if
+    # that pushes the player off the tile, the player falls instead of
+    # hovering in mid-air.
+    if landing is None and on_ground and y_velocity >= 0:
+        for tile in platforms:
+            if tile.last_dx == 0:
+                continue
+            top = tile.top_y
+            horizontal_overlap = (
+                player.x + PLAYER_HALF_W > tile.x - TILE_W / 2
+                and player.x - PLAYER_HALF_W < tile.x + TILE_W / 2
+            )
+            if horizontal_overlap and abs((player.y + PLAYER_HALF_H) - top) < 2:
+                landing = tile
+                landing_top = top
+                break
+
     was_grounded = on_ground
     if landing is not None:
         player.y = landing_top - PLAYER_HALF_H
