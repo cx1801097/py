@@ -104,3 +104,10 @@ no `highscore.txt` behind.
 - Sounds: synthesised with numpy by `tools/build_sounds.py`, so they carry no
   third-party licence.
 - Built with [Pygame Zero](https://pygame-zero.readthedocs.io/) and Pygame.
+
+## License
+
+The source code in this repository is released under the Mozilla Public
+License 2.0 - see [LICENSE](LICENSE). The bundled font keeps its own SIL Open
+Font License 1.1 terms.
+
