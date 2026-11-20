@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pyo
+highscore.txt
+.DS_Store
+Thumbs.db
