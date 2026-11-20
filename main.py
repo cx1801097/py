@@ -39,7 +39,7 @@ TITLE = "Skyward Scramble"
 TILE_W = 50                 # one stone tile
 TILE_H = 24
 GROUND_Y = 425              # centre of the solid ground row
-ROW_GAP = 105               # vertical distance between floating rows
+ROW_GAP = 118               # vertical distance between floating rows
 ROW_COUNT = 3
 TILES_PER_ROW = 4
 ROW_MIN_X = 75              # keeps moving rows away from the screen edges
@@ -62,6 +62,7 @@ GRAVITY = 1800.0
 MAX_FALL_SPEED = 900.0
 COYOTE_TIME = 0.10          # small grace period after walking off an edge
 JUMP_BUFFER = 0.12          # remembers a jump pressed just before landing
+LANDING_TOLERANCE = 2.0     # how close the feet must be to a platform top
 
 # ---------------------------------------------------------------------------
 # Rules
@@ -74,6 +75,9 @@ MAX_PLATFORM_SPEED = 200.0
 MAX_HEALTH = 100
 SPIKE_DAMAGE = 10
 SPIKE_COOLDOWN = 0.8
+SPIKE_HEIGHT = 12.0           # how far the spike tips reach above the tile
+SPIKE_KNOCKBACK = 26.0        # sideways push when the player hits a spike
+SPIKE_KNOCKBACK_JUMP = 260.0  # small hop so the player clears the spikes
 
 HINT_SECONDS = 6.0
 RETRY_DELAY = 0.4
@@ -136,9 +140,18 @@ class Spike(Actor):
 
     @property
     def danger_box(self):
-        # Spikes sit level with the tile's top edge, so the danger zone reaches
-        # a little above it - standing on the tile counts as touching them.
-        return Rect(int(self.tile.x - TILE_W / 2), int(self.tile.top_y - 8), TILE_W, TILE_H + 6)
+        # The spikes art is 50x24 and is drawn centred on the tile, so the
+        # visible spikes occupy the upper part of that box, ending at the
+        # tile's top edge.  The danger zone is exactly that visible part:
+        # the tips stick up above the tile, and nothing below the top edge
+        # counts.  Keeping the zone tight means a player standing on a
+        # neighbouring tile is not hurt by a spike they cannot touch.
+        return Rect(
+            int(self.tile.x - TILE_W / 2),
+            int(self.tile.top_y - SPIKE_HEIGHT),
+            TILE_W,
+            SPIKE_HEIGHT,
+        )
 
     def follow(self):
         self.x = self.tile.x
@@ -151,16 +164,17 @@ class Coin(Actor):
     def __init__(self, tile):
         super().__init__("coin", (tile.x, tile.top_y - 26))
         self.tile = tile
-        self.bob = random.uniform(0.0, math.tau)
 
     @property
     def box(self):
         # A slightly generous box makes coins satisfying to grab.
         return Rect(int(self.x - 13), int(self.y - 13), 26, 26)
 
-    def follow(self, elapsed):
+    def follow(self):
+        # The coin is pinned to its platform: it only travels when the
+        # platform does, so it never drifts on its own.
         self.x = self.tile.x
-        self.y = self.tile.top_y - 26 + math.sin(elapsed * 3.0 + self.bob) * 3
+        self.y = self.tile.top_y - 26
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +213,14 @@ def player_box():
         int(player.y - PLAYER_HALF_H),
         PLAYER_W,
         PLAYER_H,
+    )
+
+
+def horizontal_overlap(x, tile):
+    """True when a player centred on `x` overlaps the tile horizontally."""
+    return (
+        x + PLAYER_HALF_W > tile.x - TILE_W / 2
+        and x - PLAYER_HALF_W < tile.x + TILE_W / 2
     )
 
 
@@ -265,6 +287,8 @@ def build_level():
         # The bottom row is a steady base; the two above it slide.
         moving = index > 0
         speed = BASE_PLATFORM_SPEED if moving else 0.0
+        # Every tile of a row shares one direction, so the row always moves
+        # as one piece and a player riding it is carried consistently.
         direction = random.choice((-1, 1))
 
         row_tiles = []
@@ -284,6 +308,84 @@ def build_level():
 
     for _ in range(COINS_ON_SCREEN):
         spawn_coin()
+
+    keep_spawn_clear()
+
+
+def keep_spawn_clear():
+    """Move the player's start to a spot with clear air around it.
+
+    The player is 80px tall and the rows are only a little further apart
+    than that, so a row can easily be built right where the player would
+    start.  Rather than shuffling the whole tower around, the player is
+    simply placed in a column that is free of platforms.
+    """
+    best = None
+
+    # Try every ground tile as a starting column and keep the one whose
+    # column of air is clearest.
+    for tile in platforms:
+        if tile.y < GROUND_Y:
+            continue    # only ground tiles are candidates
+
+        x = tile.x
+        if x < PLAYER_HALF_W + 2 or x > WIDTH - PLAYER_HALF_W - 2:
+            continue
+
+        blocked = 0
+        for other in platforms:
+            if other.y >= GROUND_Y:
+                continue
+            if abs(other.x - x) > TILE_W:
+                continue
+            blocked += 1
+
+        if best is None or blocked < best[0]:
+            best = (blocked, x)
+
+        if blocked == 0:
+            break
+
+    if best is not None:
+        player.x = best[1]
+
+
+def keep_spawn_clear():
+    """Move the player's start to a spot with clear air around it.
+
+    The player is 80px tall and the rows are only a little further apart
+    than that, so a row can easily be built right where the player would
+    start.  Rather than shuffling the whole tower around, the player is
+    simply placed in a column that is free of platforms.
+    """
+    best = None
+
+    # Try every ground tile as a starting column and keep the one whose
+    # column of air is clearest.
+    for tile in platforms:
+        if tile.y < GROUND_Y:
+            continue    # only ground tiles are candidates
+
+        x = tile.x
+        if x < PLAYER_HALF_W + 2 or x > WIDTH - PLAYER_HALF_W - 2:
+            continue
+
+        blocked = 0
+        for other in platforms:
+            if other.y >= GROUND_Y:
+                continue
+            if abs(other.x - x) > TILE_W:
+                continue
+            blocked += 1
+
+        if best is None or blocked < best[0]:
+            best = (blocked, x)
+
+        if blocked == 0:
+            break
+
+    if best is not None:
+        player.x = best[1]
 
 
 def spawn_coin():
@@ -320,16 +422,27 @@ def add_spike():
         # Keep the ground safe early on so the player always has a refuge.
         candidates = [tile for tile in candidates if tile.y < GROUND_Y]
 
-    safe = [
-        tile
-        for tile in candidates
-        if abs(tile.x - player.x) > 70 or abs(tile.y - player.y) > 70
-    ]
+    # Never drop a new spike on top of the player.  A spike that appears
+    # under the player's feet would hit them immediately and look like
+    # random damage, so the tile must be clear of the player's body and
+    # of the space just above it.
+    safe = [tile for tile in candidates if not spike_would_hit(tile)]
     if safe:
         candidates = safe
 
     if candidates:
         spikes.append(Spike(random.choice(candidates)))
+
+
+def spike_would_hit(tile):
+    """True if a spike placed on this tile would touch the player right now."""
+    danger = Rect(
+        int(tile.x - TILE_W / 2),
+        int(tile.top_y - SPIKE_HEIGHT),
+        TILE_W,
+        SPIKE_HEIGHT,
+    )
+    return danger.colliderect(player_box())
 
 
 def apply_difficulty():
@@ -397,7 +510,7 @@ def end_game():
 # Gameplay
 # ---------------------------------------------------------------------------
 def move_player(dt):
-    """Input, gravity and one-way platform collisions."""
+    """Input, gravity and solid platform collisions."""
     global y_velocity, on_ground
     global coyote_timer, jump_buffer_timer
 
@@ -407,70 +520,150 @@ def move_player(dt):
     if keyboard.right or keyboard.d:
         direction += 1
 
+    # --- Horizontal movement, blocked by the sides of solid platforms -----
     player.x += direction * MOVE_SPEED * dt
     player.x = max(PLAYER_HALF_W, min(WIDTH - PLAYER_HALF_W, player.x))
 
-    # Jumping uses a short buffer and a short coyote window so quick presses
-    # and last-second edge jumps both feel right.
-    if jump_buffer_timer > 0 and (on_ground or coyote_timer > 0):
+    # --- Jumping ---------------------------------------------------------
+    # A jump only happens when the player is really standing on something.
+    # `on_ground` is maintained by the collision code below, so a player who
+    # is falling through the air can never jump.
+    if jump_buffer_timer > 0 and on_ground:
         y_velocity = -JUMP_SPEED
         jump_buffer_timer = 0.0
         coyote_timer = 0.0
         on_ground = False
         play("jump")
 
+    # --- Vertical movement, resolved against solid platforms -------------
     old_feet = player.y + PLAYER_HALF_H
+    old_head = player.y - PLAYER_HALF_H
     y_velocity = min(y_velocity + GRAVITY * dt, MAX_FALL_SPEED)
     player.y += y_velocity * dt
     feet = player.y + PLAYER_HALF_H
+    head = player.y - PLAYER_HALF_H
 
-    # One-way platforms: only land while falling onto the top edge.
     landing = None
     landing_top = None
+
     if y_velocity >= 0:
+        # Falling: land on the top edge of any platform we crossed.  A
+        # moving platform is also checked against where it used to be, so a
+        # player who is standing on one is not left behind when it slides
+        # out from under their feet.
         for tile in platforms:
             top = tile.top_y
-            horizontal_overlap = (
-                player.x + PLAYER_HALF_W > tile.x - TILE_W / 2
-                and player.x - PLAYER_HALF_W < tile.x + TILE_W / 2
-            )
-            if horizontal_overlap and old_feet <= top + 2 and feet >= top:
+            if not horizontal_overlap(player.x, tile):
+                if tile.last_dx == 0:
+                    continue
+                # The tile moved this frame: check the spot it came from.
+                if not horizontal_overlap(player.x - tile.last_dx, tile):
+                    continue
+            if old_feet <= top + LANDING_TOLERANCE and feet >= top:
                 if landing_top is None or top < landing_top:
                     landing = tile
                     landing_top = top
-
-    # A platform that moved under a resting player carries it sideways; if
-    # that pushes the player off the tile, the player falls instead of
-    # hovering in mid-air.
-    if landing is None and on_ground and y_velocity >= 0:
+    else:
+        # Rising: the player's HEAD is what meets the underside of a
+        # platform.  If the head crossed the bottom face this frame, push
+        # the player back down below it so they cannot phase up through a
+        # solid tile.
         for tile in platforms:
-            if tile.last_dx == 0:
+            if not horizontal_overlap(player.x, tile):
                 continue
             top = tile.top_y
-            horizontal_overlap = (
-                player.x + PLAYER_HALF_W > tile.x - TILE_W / 2
-                and player.x - PLAYER_HALF_W < tile.x + TILE_W / 2
-            )
-            if horizontal_overlap and abs((player.y + PLAYER_HALF_H) - top) < 2:
-                landing = tile
-                landing_top = top
+            bottom = top + TILE_H
+            if old_head >= bottom - LANDING_TOLERANCE and head <= bottom:
+                player.y = bottom + PLAYER_HALF_H
+                y_velocity = 0.0
                 break
 
     was_grounded = on_ground
+
     if landing is not None:
         player.y = landing_top - PLAYER_HALF_H
         y_velocity = 0.0
         on_ground = True
-        player.x += landing.last_dx      # a moving platform carries the player
     else:
+        # Not over any platform: the player falls.
         on_ground = False
-        if was_grounded:
-            coyote_timer = COYOTE_TIME
+
+    # --- Moving platforms carry the player -------------------------------
+    # If the player is standing on a platform, the platform's own movement
+    # this frame is added to the player, so they ride along instead of being
+    # left behind in mid-air.  The tile the player is actually resting on is
+    # used - matched by height, so a player who overlaps a row above is not
+    # carried by it as well.
+    if on_ground:
+        carry_dx = 0.0
+        feet_now = player.y + PLAYER_HALF_H
+        for tile in platforms:
+            if tile.last_dx == 0:
+                continue
+            if not horizontal_overlap(player.x, tile):
+                continue
+            if abs(feet_now - tile.top_y) > LANDING_TOLERANCE:
+                continue
+            carry_dx = tile.last_dx
+            break
+        player.x += carry_dx
+
+    # --- Solid platform bodies ------------------------------------------
+    # A platform is a solid block, not just a ledge.  If the player's body
+    # ends up inside one, they are pushed out vertically to the nearest
+    # free face instead of sinking through it.  The check is deliberately
+    # narrow: it only triggers when the player is genuinely buried in the
+    # block, so it never interferes with a normal landing.
+    for tile in platforms:
+        if not horizontal_overlap(player.x, tile):
+            continue
+
+        top = tile.top_y
+        bottom = top + TILE_H
+        head = player.y - PLAYER_HALF_H
+        feet = player.y + PLAYER_HALF_H
+
+        # Standing on top of it: fine.
+        if feet <= top + LANDING_TOLERANCE:
+            continue
+
+        # Entirely below it: fine.
+        if head >= bottom:
+            continue
+
+        # The player's body overlaps the block.  Push them out of it.
+        # When falling, they are lifted onto the platform - the natural
+        # "land on it" outcome - unless their head is below the platform,
+        # in which case they are pushed out below it.
+        if y_velocity >= 0 and head <= top + LANDING_TOLERANCE:
+            # Falling onto the platform.
+            player.y = top - PLAYER_HALF_H
+            y_velocity = 0.0
+            on_ground = True
+        elif y_velocity < 0 and feet >= bottom - LANDING_TOLERANCE:
+            # Rising into its underside: pushed back down.
+            player.y = bottom + PLAYER_HALF_H
+            y_velocity = 0.0
         else:
-            coyote_timer = max(0.0, coyote_timer - dt)
+            # Anywhere else: push out towards the nearer face so the player
+            # is never left buried inside a block.
+            centre = player.y
+            if abs(centre - top) <= abs(centre - bottom):
+                player.y = top - PLAYER_HALF_H
+                y_velocity = 0.0
+                on_ground = True
+            else:
+                player.y = bottom + PLAYER_HALF_H
+                y_velocity = 0.0
+
+    player.x = max(PLAYER_HALF_W, min(WIDTH - PLAYER_HALF_W, player.x))
+
+    if was_grounded and not on_ground:
+        coyote_timer = COYOTE_TIME
+    else:
+        coyote_timer = max(0.0, coyote_timer - dt)
 
     jump_buffer_timer = max(0.0, jump_buffer_timer - dt)
-    player.x = max(PLAYER_HALF_W, min(WIDTH - PLAYER_HALF_W, player.x))
 
 
 def collect_coins():
@@ -494,17 +687,29 @@ def check_spikes():
 
     box = player_box()
     for spike in spikes:
-        if box.colliderect(spike.danger_box):
-            health = max(0, health - SPIKE_DAMAGE)
-            score = max(0, score - 1)
-            hurt_timer = SPIKE_COOLDOWN
-            y_velocity = -JUMP_SPEED * 0.45     # small knock-back off the spikes
-            on_ground = False
-            play("hurt")
+        if not box.colliderect(spike.danger_box):
+            continue
 
-            if health <= 0:
-                end_game()
-            break
+        health = max(0, health - SPIKE_DAMAGE)
+        score = max(0, score - 1)
+        hurt_timer = SPIKE_COOLDOWN
+        play("hurt")
+
+        # Push the player away from the spike instead of straight up.  An
+        # upward knock-back would push the player straight back into the
+        # spikes, which made them take damage over and over.
+        away = 1.0 if player.x >= spike.tile.x else -1.0
+        player.x += away * SPIKE_KNOCKBACK
+        player.x = max(PLAYER_HALF_W, min(WIDTH - PLAYER_HALF_W, player.x))
+
+        # A small hop so the player clears the spikes, but not so much that
+        # they shoot up through the platform above.
+        y_velocity = -SPIKE_KNOCKBACK_JUMP
+        on_ground = False
+
+        if health <= 0:
+            end_game()
+        break
 
 
 def update(dt):
@@ -526,7 +731,7 @@ def update(dt):
     for spike in spikes:
         spike.follow()
     for coin in coins:
-        coin.follow(elapsed)
+        coin.follow()
 
     move_player(dt)
     collect_coins()

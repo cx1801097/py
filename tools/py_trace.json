@@ -1,0 +1,39 @@
+{
+  "apex_delta": 0.0,
+  "base_speed": 70.0,
+  "coin_score_delta": 1,
+  "coins": 3,
+  "coins_after_pickup": 3,
+  "floating_rows": [
+    71.0,
+    189.0,
+    307.0
+  ],
+  "ground_tiles": 16,
+  "health_after_10_frames": 90,
+  "health_after_50_frames": 80,
+  "health_after_spike": 90,
+  "jump_apex_y": 215.5,
+  "jump_rise": -157.5,
+  "jump_velocity": -750.0,
+  "landing_feet": 413.0,
+  "landing_on_ground": true,
+  "max_speed_after_upgrade": 88.0,
+  "platform_drift": 39.666667,
+  "platform_within_track": true,
+  "player_x_after_300": 100.0,
+  "player_y_after_300": 373.0,
+  "spike_knockback_velocity": -260.0,
+  "spikes": 1,
+  "spikes_after_upgrade": 2,
+  "state_after_300_frames": "playing",
+  "state_after_fatal": "gameover",
+  "state_after_retry": "playing",
+  "state_before_retry_delay": "gameover",
+  "tiles_per_row": [
+    4,
+    4,
+    4
+  ],
+  "walk_delta": 150.0
+}
